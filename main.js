@@ -5,14 +5,19 @@ var client_uuid = "***"; // replace by X-Client-Uuid value
 var csrf_token = getCookie("ct0");
 var random_resource = "P_BKPwbhf2pWGbVaoBo7fg";
 var tweets_to_unlike = []
+var tweets_to_like = []
 var user_id = getCookie("twid").substring(4);
 var username = "YourUsernameHere" // replace with your username
+var generalCounter = 0;
+var initialTime = new Date().getTime();
+var counter = 1;
+
 var delete_options = {
 	"force_unlike":false,
 	/*
 		tweets_to_ignore : give all the tweet ids that you want to keep.
 		To find the id of the tweet, click on it, then copy the number you find in the url
-		it looks like that : https://twitter.com/USERNAME/status/1695001000000000, the id here is 1695001000000000
+		it looks like that : https://x.com/USERNAME/status/1695001000000000, the id here is 1695001000000000
 		It expects strings, so add the double-quotes around it, like that : ["1695001000000000"], you can give multiple ids ofc it's an array
 	*/
 	"tweets_to_ignore":[
@@ -64,7 +69,7 @@ async function sleep(ms) {
 async function fetch_likes(cursor, retry = 0) {
 	let count = "20";
 	let final_cursor = cursor ? `%22cursor%22%3A%22${cursor}%22%2C` : "";
-	var base_url = `https://twitter.com/i/api/graphql/${random_resource}/Likes`;
+	var base_url = `https://x.com/i/api/graphql/${random_resource}/Likes`;
 
 	var variable = `?variables=%7B%22userId%22%3A%22${user_id}%22%2C%22count%22%3A${count}%2C${final_cursor}%22includePromotedContent%22%3Afalse%2C%22withClientEventToken%22%3Afalse%2C%22withBirdwatchNotes%22%3Afalse%2C%22withVoice%22%3Atrue%2C%22withV2Timeline%22%3Atrue%7D`;
 	var feature = `&features=%7B%22rweb_lists_timeline_redesign_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22tweetypie_unmention_optimization_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Afalse%2C%22tweet_awards_web_tipping_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Atrue%2C%22responsive_web_media_download_video_enabled%22%3Afalse%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D`;
@@ -89,7 +94,7 @@ async function fetch_likes(cursor, retry = 0) {
 			"x-twitter-auth-type": "OAuth2Session",
 			"x-twitter-client-language": "fr"
 		},
-		"referrer": `https://twitter.com/${username}/likes`,
+		"referrer": `https://x.com/${username}/likes`,
 		"referrerPolicy": "strict-origin-when-cross-origin",
 		"body": null,
 		"method": "GET",
@@ -175,6 +180,12 @@ function findTweetIds(obj) {
 			tweetFound(currentObj)
 		}
 
+		if (((currentObj.hasOwnProperty('__typename') && currentObj['__typename'] === 'Tweet') || currentObj.hasOwnProperty('rest_id')) && currentObj.hasOwnProperty('legacy')
+			&& check_filter(currentObj) && currentObj['legacy']['favorited'] == false) {
+			tweets_to_like.push(currentObj['id_str'] || currentObj['legacy']['id_str']);
+			tweetFound(currentObj)
+		}
+
 		for (let key in currentObj) {
 			if (currentObj.hasOwnProperty(key)) {
 				recurse(currentObj[key]);
@@ -191,7 +202,8 @@ async function unlike_tweets(id_list) {
 	var retry = 0
 
 	for (let i = 0; i < id_list_size; ++i) {
-		const response = await fetch("https://twitter.com/i/api/graphql/ZYKSe-w7KEslx3JhSIk5LA/UnfavoriteTweet", {
+		await new Promise(resolve => setTimeout(resolve, (5000 + Math.random() * 5000)));
+		const response = await fetch("https://x.com/i/api/graphql/ZYKSe-w7KEslx3JhSIk5LA/UnfavoriteTweet", {
 			"headers": {
 				"accept": "*/*",
 				"accept-language": buildAcceptLanguageString(),
@@ -210,7 +222,7 @@ async function unlike_tweets(id_list) {
 				"x-twitter-auth-type": "OAuth2Session",
 				"x-twitter-client-language": "fr"
 			},
-			"referrer": `https://twitter.com/${username}/likes`,
+			"referrer": `https://x.com/${username}/likes`,
 			"referrerPolicy": "strict-origin-when-cross-origin",
 			"body": `{\"variables\":{\"tweet_id\":\"${id_list[i]}\"},\"queryId\":\"ZYKSe-w7KEslx3JhSIk5LA\"}`,
 			"method": "POST",
@@ -234,10 +246,85 @@ async function unlike_tweets(id_list) {
 			continue
 		}
 		retry = 0
-		console.log(`${i}/${id_list_size}`)
+		console.log(`Unlike: ${i}/${id_list_size}`)
 		await sleep(100);
+        generalCounter++;
 	}
 }
+
+
+
+async function like_tweets(id_list) {
+	var delete_tid = "46qLX+0MzjOphAycTBNuyqk9EGcqQivYbC6cczFQw7JhySN7h70cjjt3ue1Von/8sPgFiOKOdf11/JnrvRXBsaPicb7g4g"
+	var id_list_size = id_list.length
+	var retry = 0
+
+	for (let i = 0; i < id_list_size; ++i) {
+		const response = await fetch("https://x.com/i/api/graphql/lI07N6Otwv1PhnEgXILM7A/FavoriteTweet", {
+			"headers": {
+				"accept": "*/*",
+				"accept-language": buildAcceptLanguageString(),
+				"authorization": authorization,
+				"content-type": "application/json",
+				"sec-ch-ua": ua,
+				"sec-ch-ua-mobile": "?0",
+				"sec-ch-ua-platform": "\"Windows\"",
+				"sec-fetch-dest": "empty",
+				"sec-fetch-mode": "cors",
+				"sec-fetch-site": "same-origin",
+				"x-client-transaction-id": delete_tid,
+				"x-client-uuid": client_uuid,
+				"x-csrf-token": csrf_token,
+				"x-twitter-active-user": "yes",
+				"x-twitter-auth-type": "OAuth2Session",
+				"x-twitter-client-language": "fr"
+			},
+			"referrer": `https://x.com/${username}/likes`,
+			"referrerPolicy": "strict-origin-when-cross-origin",
+			"body": `{\"variables\":{\"tweet_id\":\"${id_list[i]}\"},\"queryId\":\"lI07N6Otwv1PhnEgXILM7A\"}`,
+			"method": "POST",
+			"mode": "cors",
+			"credentials": "include"
+		});
+		if (!response.ok) {
+			if (response.status === 429) {
+				console.log("Rate limit reached. Waiting 3 minutes. It should work after 2-4 retries(6-12 minutes). If it doesn't, F5 to stop the script and retry in an hour")
+				await sleep(1000 * 60 * 3); // 3 minutes
+				i -= 1;
+				continue
+			}
+			if (retry == 5) {
+				throw new Error("Max retries reached")
+			}
+			console.log(response.text())
+			console.log(`(unlike_tweets) Network response was not ok, retrying in ${10 * (1 + retry)} seconds`);
+			i -= 1;
+			await sleep(10000 * (1 + retry));
+			continue
+		}
+		retry = 0
+		console.log(`Like: ${i}/${id_list_size}`)
+		tweets_to_unlike.push(id_list[i])
+		likesCounter++;
+		await sleep(Math.floor(Math.random() * 10000) + 5000);
+	}
+}
+
+function formatTime(seconds) {
+    // Calculate the hours, minutes, and seconds
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    // Pad the numbers with leading zeros if necessary
+    const paddedHours = String(hours).padStart(2, '0');
+    const paddedMinutes = String(minutes).padStart(2, '0');
+    const paddedSeconds = String(secs).padStart(2, '0');
+
+    // Return the formatted time
+    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
+}
+
 
 var next = null
 var entries = undefined
@@ -245,9 +332,17 @@ var entries = undefined
 while (next != "finished") {
 	entries = await fetch_likes(next);
 	next = await log_tweets(entries);
+	await like_tweets(tweets_to_like)
 	await unlike_tweets(tweets_to_unlike)
+	tweets_to_like = []
 	tweets_to_unlike = []
-	await sleep(3000);
+	if (generalCounter > counter * 100) {
+        console.log("Sleeping for 30-120 seconds to avoid rate limit");
+        await sleep(Math.floor(Math.random() * 90000) + 30000);
+        counter++;
+    }
+	console.log(`Tweets liked: ${likesCounter} - Tweets unliked: ${generalCounter} - Elapsed time: ${formatTime((new Date().getTime() - initialTime)/1000)} - medTime ${formatTime((new Date().getTime() - initialTime)/1000/generalCounter)}`)
+	await sleep(10000);
 }
 
 console.log("UNLIKING COMPLETE (if error happened before this may be not true)")
